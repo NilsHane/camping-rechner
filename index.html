@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camping La Quiete – Preisrechner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg2: #f5f5f0;
+    --text: #1a1a1a;
+    --text2: #666;
+    --text3: #999;
+    --border: rgba(0,0,0,0.1);
+    --accent: #0F6E56;
+    --accent2: #185FA5;
+    --accent3: #993556;
+    --accent4: #534AB7;
+    --accent5: #888780;
+    --accent6: #993C1D;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a;
+      --bg2: #2a2a2a;
+      --text: #e8e8e8;
+      --text2: #aaa;
+      --text3: #777;
+      --border: rgba(255,255,255,0.12);
+      --accent: #5DCAA5;
+      --accent2: #85B7EB;
+      --accent3: #ED93B1;
+      --accent4: #AFA9EC;
+      --accent5: #B4B2A9;
+      --accent6: #F0997B;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+    line-height: 1.6;
+  }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .sub { font-size: 14px; color: var(--text2); margin-bottom: 2rem; }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .slider-row label {
+    font-size: 14px;
+    color: var(--text2);
+    min-width: 150px;
+  }
+  .slider-row input[type=range] {
+    flex: 1;
+    accent-color: var(--accent);
+    height: 6px;
+  }
+  .slider-row .val {
+    font-size: 20px;
+    font-weight: 500;
+    min-width: 28px;
+    text-align: right;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 1.5rem 0;
+  }
+  .card {
+    background: var(--bg2);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+  }
+  .card .label { font-size: 13px; color: var(--text2); margin-bottom: 4px; }
+  .card .big { font-size: 32px; font-weight: 500; }
+  .card .detail { font-size: 13px; color: var(--text2); margin-top: 6px; line-height: 1.8; }
+  .warn { font-size: 12px; color: #BA7517; margin-top: 8px; }
+  .chart-title { font-size: 14px; font-weight: 500; margin-bottom: 12px; }
+  .chart-wrap { position: relative; width: 100%; height: 80px; margin-bottom: 8px; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--text2);
+    margin-bottom: 1.5rem;
+  }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .breakdown {
+    background: var(--bg2);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .breakdown table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .breakdown td { padding: 4px 0; }
+  .breakdown td:first-child { color: var(--text2); }
+  .breakdown td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .breakdown tr.total td { font-weight: 500; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+  .footer { font-size: 12px; color: var(--text3); }
+</style>
+</head>
+<body>
+
+<h1>Camping La Quiete – Preisrechner</h1>
+<p class="sub">Lago di Mergozzo · Mittelsaison · 4.–7. Juni 2026 (3 Nächte)</p>
+
+<div id="sliders"></div>
+<div class="cards" id="totals"></div>
+
+<div class="breakdown" id="breakdown"></div>
+
+<div class="chart-title">Kosten pro Nacht</div>
+<div class="chart-wrap"><canvas id="costChart"></canvas></div>
+<div class="legend" id="legend"></div>
+
+<p class="footer">
+  Mittelsaison (13.05.–07.07. / 25.08.–10.09.2026) · Standardstellplatz (nicht See) · Nur Erwachsene · Sterilisierung einmalig pro Stellplatz · Preise lt. Preisliste Nov. 2025
+</p>
+
+<script>
+const NIGHTS = 3;
+const PRICES = { pitch: 30, extraPerson: 8, extraTent: 4, extraVehicle: 4, tax: 1, sanit: 40 };
+
+const sliderDefs = [
+  { id: 'persons',  label: 'Personen',              min: 3, max: 10, val: 5 },
+  { id: 'tents',    label: 'Zelte',                 min: 2, max: 8,  val: 3 },
+  { id: 'vehicles', label: 'Autos / Motorräder',    min: 1, max: 5,  val: 1 },
+  { id: 'pitches',  label: 'Stellplätze',           min: 1, max: 2,  val: 1 }
+];
+
+const vals = {};
+const slidersDiv = document.getElementById('sliders');
+
+sliderDefs.forEach(s => {
+  vals[s.id] = s.val;
+  const row = document.createElement('div');
+  row.className = 'slider-row';
+  row.innerHTML =
+    '<label>' + s.label + '</label>' +
+    '<input type="range" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="1" id="sl_' + s.id + '" />' +
+    '<span class="val" id="out_' + s.id + '">' + s.val + '</span>';
+  slidersDiv.appendChild(row);
+  document.getElementById('sl_' + s.id).addEventListener('input', e => {
+    vals[s.id] = parseInt(e.target.value);
+    document.getElementById('out_' + s.id).textContent = vals[s.id];
+    render();
+  });
+});
+
+function calc() {
+  const p = vals.pitches;
+  const extraPersons = Math.max(0, vals.persons - p * 2);
+  const extraTents = Math.max(0, vals.tents - p);
+  const extraVehicles = Math.max(0, vals.vehicles - p);
+
+  const pitchNight = p * PRICES.pitch;
+  const persNight = extraPersons * PRICES.extraPerson;
+  const tentNight = extraTents * PRICES.extraTent;
+  const vehNight = extraVehicles * PRICES.extraVehicle;
+  const taxNight = vals.persons * PRICES.tax;
+  const sanit = p * PRICES.sanit;
+
+  const perNight = pitchNight + persNight + tentNight + vehNight + taxNight;
+  const total = perNight * NIGHTS + sanit;
+  const perPerson = Math.round(total / vals.persons * 100) / 100;
+
+  return { pitchNight, persNight, tentNight, vehNight, taxNight, sanit, perNight, total, perPerson, extraPersons, extraTents, extraVehicles };
+}
+
+const style = getComputedStyle(document.documentElement);
+const cs = {
+  pitch: style.getPropertyValue('--accent').trim(),
+  person: style.getPropertyValue('--accent2').trim(),
+  tent: style.getPropertyValue('--accent3').trim(),
+  vehicle: style.getPropertyValue('--accent4').trim(),
+  tax: style.getPropertyValue('--accent5').trim(),
+  sanit: style.getPropertyValue('--accent6').trim()
+};
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+const tickColor = isDark ? '#B4B2A9' : '#888780';
+
+let chart;
+
+function render() {
+  const d = calc();
+
+  const warn = vals.persons > vals.pitches * 6
+    ? '<div class="warn">Viele Personen pro Stellplatz – ggf. mehr Plätze buchen</div>' : '';
+
+  document.getElementById('totals').innerHTML =
+    '<div class="card">' +
+      '<div class="label">Gesamt (' + NIGHTS + ' Nächte)</div>' +
+      '<div class="big">' + d.total.toFixed(0) + ' €</div>' +
+      '<div class="detail">' + d.perNight.toFixed(0) + ' €/Nacht + ' + d.sanit + ' € Sterilisierung</div>' +
+      warn +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="label">Pro Person</div>' +
+      '<div class="big">' + d.perPerson.toFixed(0) + ' €</div>' +
+      '<div class="detail">bei ' + vals.persons + ' Personen</div>' +
+    '</div>';
+
+  document.getElementById('breakdown').innerHTML =
+    '<table>' +
+      '<tr><td>' + vals.pitches + '× Stellplatz (je 30 €)</td><td>' + d.pitchNight + ' €</td></tr>' +
+      '<tr><td>' + d.extraPersons + '× Zusatzperson (je 8 €)</td><td>' + d.persNight + ' €</td></tr>' +
+      '<tr><td>' + d.extraTents + '× Zusatzzelt (je 4 €)</td><td>' + d.tentNight + ' €</td></tr>' +
+      '<tr><td>' + d.extraVehicles + '× Zusatzfahrzeug (je 4 €)</td><td>' + d.vehNight + ' €</td></tr>' +
+      '<tr><td>' + vals.persons + '× Kurtaxe (je 1 €)</td><td>' + d.taxNight + ' €</td></tr>' +
+      '<tr class="total"><td>Pro Nacht</td><td>' + d.perNight + ' €</td></tr>' +
+      '<tr><td>× ' + NIGHTS + ' Nächte</td><td>' + (d.perNight * NIGHTS) + ' €</td></tr>' +
+      '<tr><td>' + vals.pitches + '× Sterilisierung (je 40 €, einmalig)</td><td>' + d.sanit + ' €</td></tr>' +
+      '<tr class="total"><td>Gesamt</td><td>' + d.total.toFixed(0) + ' €</td></tr>' +
+    '</table>';
+
+  const datasets = [
+    { label: 'Stellplätze',      data: [d.pitchNight], backgroundColor: cs.pitch + 'BB',   borderColor: cs.pitch,   borderWidth: 1 },
+    { label: 'Zusatzpersonen',   data: [d.persNight],  backgroundColor: cs.person + 'BB',  borderColor: cs.person,  borderWidth: 1 },
+    { label: 'Zusatzzelte',      data: [d.tentNight],  backgroundColor: cs.tent + 'BB',    borderColor: cs.tent,    borderWidth: 1 },
+    { label: 'Zusatzfahrzeuge',  data: [d.vehNight],   backgroundColor: cs.vehicle + 'BB', borderColor: cs.vehicle, borderWidth: 1 },
+    { label: 'Kurtaxe',          data: [d.taxNight],   backgroundColor: cs.tax + 'BB',     borderColor: cs.tax,     borderWidth: 1 }
+  ];
+
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById('costChart'), {
+    type: 'bar',
+    data: { labels: [''], datasets },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.raw + ' €' } }
+      },
+      scales: {
+        x: { stacked: true, ticks: { callback: v => v + ' €', color: tickColor }, grid: { color: gridColor } },
+        y: { stacked: true, display: false }
+      }
+    }
+  });
+
+  const items = [
+    { c: cs.pitch,   l: 'Stellplätze (' + d.pitchNight + ' €)' },
+    { c: cs.person,  l: 'Zusatzpers. (' + d.persNight + ' €)' },
+    { c: cs.tent,    l: 'Zusatzzelte (' + d.tentNight + ' €)' },
+    { c: cs.vehicle, l: 'Zusatzfahrz. (' + d.vehNight + ' €)' },
+    { c: cs.tax,     l: 'Kurtaxe (' + d.taxNight + ' €)' },
+    { c: cs.sanit,   l: 'Sterilisierung (' + d.sanit + ' €, einmalig)' }
+  ];
+  document.getElementById('legend').innerHTML = items.map(i =>
+    '<span><span class="dot" style="background:' + i.c + '"></span>' + i.l + '</span>'
+  ).join('');
+}
+
+render();
+</script>
+</body>
+</html>
